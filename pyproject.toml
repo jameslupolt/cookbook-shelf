@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling>=1.26,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cookbook-shelf"
+version = "0.2.1"
+description = "A local, read-only CLI and MCP adapter for an Eat Your Books bookshelf"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+dependencies = ["beautifulsoup4>=4.12,<5", "playwright>=1.60,<2"]
+
+[project.optional-dependencies]
+mcp = ["mcp>=2.2,<3"]
+dev = ["pytest>=8,<9", "build>=1.2,<2"]
+
+[project.scripts]
+cookbooks = "cookbook_shelf.cli:main"
+cookbook-shelf-mcp = "cookbook_shelf.mcp_server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cookbook_shelf"]
+
+[tool.hatch.build.targets.sdist]
+include = ["/src", "/tests", "/README.md", "/VALIDATION.md", "/ACCESS-OPTIONS.md", "/LICENSE", "/pyproject.toml", "/uv.lock", "/.gitignore"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
