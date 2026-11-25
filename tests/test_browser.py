@@ -42,15 +42,15 @@ def test_login_verifies_after_challenge_is_cleared(monkeypatch):
     page.goto.return_value.status = 403
 
     def sign_in(prompt):
-        page.content.return_value = '<a href="/bookshelf">My Bookshelf</a>'
-        page.url = "https://www.eatyourbooks.com/bookshelf"
+        page.content.return_value = '<a href="/shelf/books">Books</a>'
+        page.url = "https://www.cookshelf.app/shelf"
         page.goto.return_value.status = 200
         return ""
 
     monkeypatch.setattr("builtins.input", sign_in)
     BrowserTransport(page).login()
     assert page.goto.call_count == 2
-    assert page.goto.call_args.args == ("https://www.eatyourbooks.com/bookshelf",)
+    assert page.goto.call_args.args == ("https://www.cookshelf.app/shelf",)
 
 
 def test_login_can_be_cancelled_without_another_request(monkeypatch):
@@ -112,13 +112,13 @@ def test_cdp_owns_only_its_new_tab(monkeypatch, tmp_path, fail):
 
 def test_cdp_login_checks_shelf_without_signin_navigation_or_prompt(monkeypatch):
     page = MagicMock()
-    page.content.return_value = '<a href="/bookshelf">My Bookshelf</a>'
-    page.url = "https://www.eatyourbooks.com/bookshelf"
+    page.content.return_value = '<a href="/shelf/books">Books</a>'
+    page.url = "https://www.cookshelf.app/shelf"
     page.goto.return_value.status = 200
     prompt = MagicMock(side_effect=AssertionError("CDP login must not prompt"))
     monkeypatch.setattr("builtins.input", prompt)
     BrowserTransport(page, attached=True).login()
-    page.goto.assert_called_once_with("https://www.eatyourbooks.com/bookshelf", wait_until="domcontentloaded")
+    page.goto.assert_called_once_with("https://www.cookshelf.app/shelf", wait_until="domcontentloaded")
     prompt.assert_not_called()
 
 
