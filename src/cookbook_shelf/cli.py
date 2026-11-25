@@ -74,6 +74,8 @@ def main(argv=None) -> int:
                 else:
                     print(f"{item['title']} | {item['book_title']} | page {item['page'] or 'unknown'}")
                     print(f"  {item['url']}")
+                    if item["ingredients"]:
+                        print(f"  ingredients: {'; '.join(item['ingredients'])}")
             print(f"{result['count']} results; {result['pages_read']} result pages read.")
             if result["truncated"]:
                 print("PARTIAL: increase --limit or --max-pages to retrieve more.")

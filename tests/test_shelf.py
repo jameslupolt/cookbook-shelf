@@ -113,9 +113,10 @@ def test_limit_exactly_at_last_record_is_complete():
     assert result["search_pages_complete"]
 
 
-def test_missing_book_inventory_refuses_search():
-    with pytest.raises(ShelfError, match="cookbook list is incomplete"):
-        ShelfService(Pages([recipe()], [book(), book("11")])).search_recipes("edamame", max_pages=1)
+def test_missing_book_inventory_falls_back_to_server_scope():
+    result = ShelfService(Pages([recipe()], [book(), book("11")])).search_recipes("edamame", max_pages=1)
+    assert result["count"] == 1
+    assert any("shelf-scoped search alone" in w for w in result["warnings"])
 
 
 def test_foreign_and_write_urls_are_rejected():
@@ -154,8 +155,10 @@ def test_zero_count_confirms_empty_results():
 
 def test_missing_next_link_cannot_claim_complete_results():
     html = '<span id="search-result-count">2</span>' + recipe()
-    with pytest.raises(LayoutChanged, match="count does not match"):
-        ShelfService(Pages([html])).search_recipes("edamame")
+    result = ShelfService(Pages([html])).search_recipes("edamame")
+    assert result["truncated"]
+    assert result["search_pages_complete"] is False
+    assert any("no followable pagination" in w for w in result["warnings"])
 
 
 def test_result_count_change_is_detected():

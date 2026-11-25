@@ -21,8 +21,11 @@ def contains_phrase(value: str, phrase: str) -> bool:
 
 def query_url(route: str, query: str, kind: str = "recipes") -> str:
     parts = urlsplit(shelf_url(route))
-    # Clear previous query, filters, and pagination from the tab URL.
-    params = {"q": query}
+    # Clear previous query, filters, and pagination from the tab URL, but keep the
+    # route's own parameters (e.g. the search page's mode and scope=shelf).
+    params = {key: value for key, value in parse_qsl(parts.query, keep_blank_values=True)
+              if key not in ("q", "page")}
+    params["q"] = query
     if kind == "books":
         params["view"] = "1"  # 200 books/page, with ISBN/index badges still present.
     # The default recipe view carries ingredient metadata; condensed recipes do not.
@@ -83,14 +86,17 @@ class ShelfService:
                 if dict(parse_qsl(urlsplit(url).query)).get("q", "") != query:
                     raise LayoutChanged("EYB pagination changed the search query.")
             else:
-                complete = True
-        if complete and expected_total is not None and examined != expected_total:
-            raise LayoutChanged("EYB's result count does not match the pages read; results would be incomplete.")
+                complete = expected_total is None or examined >= expected_total
+        warnings = []
+        if expected_total is not None and examined != expected_total:
+            warnings.append(
+                f"The site reports {expected_total} candidates but {examined} were read "
+                "(no followable pagination link was found); results may be partial.")
         return dict(items=items, count=len(items), pages_read=pages,
                     search_pages_complete=complete, truncated=not complete,
                     website_candidate_count=expected_total,
                     candidates_examined=examined, candidates_excluded=excluded,
-                    candidates_with_missing_metadata=unknown)
+                    candidates_with_missing_metadata=unknown, warnings=warnings)
 
     def list_cookbooks(self, limit: int = 500, max_pages: int = 20) -> dict:
         result = self._collect("books", "", limit=limit, max_pages=max_pages)
@@ -112,16 +118,29 @@ class ShelfService:
             raise ShelfError("limit must be 1–5000 and max_pages must be 1–100.")
         if mode != "keyword" and any(c in query for c in ('"', ':', '*', '\n', '\r')):
             raise ShelfError("Use plain ingredient/dish names; use keyword mode for EYB query operators.")
-        books = self.list_cookbooks(limit=5000, max_pages=max_pages)
-        if books["truncated"]:
-            raise ShelfError("The cookbook list is incomplete. Increase --max-pages before searching.")
-        book_ids = {b["id"] for b in books["items"]}
+        # CookShelf enforces shelf membership server-side (scope=shelf), so the
+        # bookshelf listing is an optional integrity check: if it succeeds and is
+        # complete, ownership is re-verified locally; otherwise fall back to the
+        # site's scope and say so.
+        book_ids = None
+        fallback_warning = None
+        try:
+            books = self.list_cookbooks(limit=5000, max_pages=max_pages)
+            if not books["truncated"]:
+                book_ids = {b["id"] for b in books["items"]}
+            else:
+                fallback_warning = ("The bookshelf listing was incomplete, so shelf membership "
+                                    "relies on the site's shelf-scoped search alone.")
+        except ShelfError:
+            fallback_warning = ("The bookshelf listing could not be read, so shelf membership "
+                                "relies on the site's shelf-scoped search alone.")
 
         def accept(item):
-            if not item["book_id"]:
-                return None
-            if item["book_id"] not in book_ids:
-                return False
+            if book_ids is not None:
+                if not item["book_id"]:
+                    return None
+                if item["book_id"] not in book_ids:
+                    return False
             if mode == "ingredient":
                 if item["ingredients"] is None:
                     return None
@@ -137,9 +156,13 @@ class ShelfService:
 
         remote_query = query if mode == "keyword" else '"' + query + '"'
         result = self._collect("recipes", remote_query, limit=limit, max_pages=max_pages, accept=accept)
-        result.update(query=query, mode=mode, scope="cookbooks on your EYB Bookshelf",
-                      indexing=books["indexing"], warnings=[
-            "Only indexed recipes returned by EYB's keyword search are candidates; this is not a full-text search of your books.",
+        result["query"] = query
+        result["mode"] = mode
+        result["scope"] = "cookbooks on your CookShelf shelf"
+        if fallback_warning:
+            result["warnings"].append(fallback_warning)
+        result["warnings"].extend([
+            "Only indexed recipes returned by CookShelf's search are candidates; this is not a full-text search of your books.",
             "Ingredient lists may omit pantry staples. Missing page numbers and metadata are reported as null.",
         ])
         if mode in ("ingredient", "dish"):
