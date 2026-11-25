@@ -135,6 +135,16 @@ class BrowserTransport:
         time.sleep(max(0, 1 - (time.monotonic() - self.last_read)))
         response = self.page.goto(url, wait_until="domcontentloaded")
         self.last_read = time.monotonic()
+        # The rebranded site is a client-hydrated app: search results and shelf
+        # covers are injected after load. Wait briefly for them before reading.
+        path = urlsplit(self.page.url).path
+        wanted = ("article.rt-card" if path == "/search"
+                  else "a.sh-cover-link" if path.startswith("/shelf") else None)
+        if wanted:
+            try:
+                self.page.wait_for_selector(wanted, timeout=10000)
+            except Exception:
+                pass
         # Do not retry, impersonate another browser, solve challenges, or request cookies.
         document = Document(self.page.content(), self.page.url, response.status if response else 200)
         check_page(document.html, document.url, document.status)
@@ -142,15 +152,16 @@ class BrowserTransport:
 
     def route(self, kind: str) -> str:
         if kind not in self.routes:
-            document = self.read(ORIGIN + "/bookshelf")
-            for name in ("books", "recipes"):
-                self.routes[name] = shelf_route(document.html, name, document.url)
+            # Verified CookShelf layout (Nov 2026): the shelf books list and the
+            # shelf-scoped recipe search replace the old /bookshelf tabs.
+            self.routes["books"] = ORIGIN + "/shelf/books"
+            self.routes["recipes"] = ORIGIN + "/search?mode=recipes&scope=shelf"
         return self.routes[kind]
 
     def login(self):
         if self.attached:
             # The user signs in before attachment. This command only verifies access.
-            self.read(ORIGIN + "/bookshelf")
+            self.read(ORIGIN + "/shelf")
             return
         print("Opening EYB sign-in. Press Ctrl+C in this terminal to cancel.", file=sys.stderr, flush=True)
         self.page.goto(ORIGIN + "/signin", wait_until="domcontentloaded")
@@ -166,4 +177,4 @@ class BrowserTransport:
         # Use the current DOM: the original navigation's 403 can be stale if the
         # user completed verification. Do not navigate again while still challenged.
         check_verification(self.page.content())
-        self.read(ORIGIN + "/bookshelf")
+        self.read(ORIGIN + "/shelf")
